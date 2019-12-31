@@ -40,32 +40,54 @@ def clearcanvas(canvas):  # 清空相应frame中的所有控件
 
 
 def bandget(ds,*args):
+    global bandsnum
+    bandsnum = args
+    global bands
     bands = [] #通过列表，可以获取指定数量与类别的波段
-    flg = False
+    flg = True
     gap = 0
     
     #注意 此处判断读取数据像元值是否越界，如果越界，一般为“dat”等类型文件，需要首先进行归一化至0-255的处理
     for i in args:
         bandarray = ds.GetRasterBand(i).ReadAsArray()
-        # print(bandarray)
+        print(bandarray.dtype)
+        print(np.min(bandarray),np.max(bandarray),np.mean(bandarray))
+    #     # if bandarray.dtype == 'int16':
+    #     #     bandarray = bandarray/(2**15-1)
+    #     #     bandarray = bandarray.astype(float)
+    #     # elif bandarray.dtype == 'int32':
+    #     #     bandarray = bandarray/(2**31-1)
+    #     #     bandarray=bandarray.astype(float)
+    #     # elif bandarray.dtype == 'int64':
+    #     #     bandarray = bandarray/(2**63-1)
+    #     #     bandarray=bandarray.astype(float)
+    
+    #     # # bandarray.dtype = "uint64"
+    #     # print(bandarray)
         dnmin = np.min(bandarray)
         dnmax = np.max(bandarray)
         if dnmin<0 or dnmax>255:
-            flg = True
-            gap = max(gap,dnmax-dnmin)
-
+            # flg = True
+            # gap = max(gap,dnmax-dnmin)
+            bandarray = ((bandarray-dnmin)/(dnmax - dnmin)*255).astype(int)
         bands.append(bandarray)
+
     
-    if flg == True:
-        for i in range(len(bands)):
-            # t = bands[i]
-            bands[i] = ((bands[i]-np.min(bands[i]))/gap*255).astype(int)
+    # if flg == True:
+    #     for i in range(len(bands)):
+    #         # t = bands[i]
+    #         bands[i] = ((bands[i]-np.min(bands[i]))/gap).astype(float)
+    
+    for band in bands:
+        print(band.dtype)
+        print(np.min(band),np.max(band),np.mean(band))
+        # print(band)
 
     # b = ds.GetRasterBand(b).ReadAsArray()
     # g = ds.GetRasterBand(g).ReadAsArray()
     # r = ds.GetRasterBand(r).ReadAsArray()
     data = np.dstack(tuple(bands))
-    # print(data)
+    print(data)
 
 
     return data
@@ -87,7 +109,8 @@ def draw2canvas(data):
 
 def getgray():
     #根据设定的权重转换RGB至灰度值
-    grayband = ds.GetRasterBand(1).ReadAsArray()*0.114+ds.GetRasterBand(2).ReadAsArray()*0.587+ds.GetRasterBand(3).ReadAsArray()*0.299
+    grayband = ds.GetRasterBand(bandsnum[0]).ReadAsArray()*0.114+ds.GetRasterBand(bandsnum[1]).ReadAsArray()*0.587+ds.GetRasterBand(bandsnum[2]).ReadAsArray()*0.299
+    # grayband = ds.GetRasterBand(1).ReadAsArray()*(1/3)+ds.GetRasterBand(2).ReadAsArray()*(1/3)+ds.GetRasterBand(3).ReadAsArray()*(1/3)
     grayband = grayband.astype(int)
     return grayband
 
@@ -542,8 +565,8 @@ def affirmlayer():  # 确认图层框上的操作
     if comb1.get() == "RGB三波段合成":
         msg["text"] = ('bands = '+np.str(ds.RasterCount))
     
-        if rfilename[-3:]=="img":
-            data = bandget(ds,1,2,3)
+        if rfilename[-3:]=="img" or rfilename[-3:]=="dat":
+            data = bandget(ds,4,3,2)
         elif ds.RasterCount>=3:
             data = bandget(ds,1,2,3)
         else:
@@ -554,6 +577,36 @@ def affirmlayer():  # 确认图层框上的操作
         band = comb1.get()
         data = bandget(ds,rasterbands[band], rasterbands[band], rasterbands[band])
         draw2canvas(data)
+
+
+def showdefine(bandentry):
+    global bandsnum
+    bandsnum = []
+    for entry in bandentry:
+        bandsnum.append(int(entry.get()))
+    rfilename = filepath[comblayer.get()]
+    global ds  # 打开文件、修改栅格图像都是对ds进行操作
+    ds = gdal.Open(rfilename)
+    data = bandget(ds,bandsnum[0],bandsnum[1],bandsnum[2])
+    draw2canvas(data)
+
+
+
+def definband():
+    top = Toplevel()
+    top.title("自定义波段与通道")
+    lb = ("选择通道R的波段(输入数字)","选择通道G的波段(输入数字)","选择通道B的波段(输入数字)")
+    bandentry =[]
+    for i in lb:
+        frame = Frame(top)
+        frame.pack(side="top")
+        Label(frame,text = i).pack(side = LEFT)
+        entry = Entry(frame)
+        entry.pack(side = RIGHT)
+        bandentry.append(entry)
+    
+    Button(top,text = "确认",command = lambda:showdefine(bandentry)).pack()
+    top.mainloop()
 
 
 # # 确认图层及显示文件操作
@@ -602,6 +655,7 @@ def makemenu(parent):
     raybutton = Menubutton(menubar, text='灰度变换/直方图调整', underline=0)
     raybutton.pack(side=LEFT)
     ray = Menu(raybutton,tearoff = False)
+    # ray.add_command(label='自定义波段合成',command = definband, underline=0)
     ray.add_command(label='RGB-灰度值',command = rgb2gray, underline=0)
     ray.add_command(label='灰度值统计直方图',command = graystat, underline=0)
     ray.add_command(label='灰度值反比变换处理',command = graycontra, underline=0)
@@ -676,7 +730,7 @@ if __name__ == "__main__":
 
     # 开始了
     photo1 = PhotoImage(file="photos/road.gif")
-    lb = Label(layerframe, width=400, height=500, bg="white" ,image=photo1)#
+    lb = Label(layerframe, width=400, height=500, bg="white" )#,image=photo1
     lb.pack(fill=BOTH, expand=1)
     #lb.grid(row=0, column=0, sticky=NSEW)
 
@@ -702,8 +756,12 @@ if __name__ == "__main__":
     listb1.grid(row=4, column=0, sticky=NSEW)
     layers = [] #用于存储多个打开的文件地址 以便选择不同的图层
     filepath = {"1":None} #字典用于从comb到文件path的查询
-    btlayerok = Button(lb, text="显示影像", command=affirmlayer)
-    btlayerok.grid(row=5, column=0, sticky=NSEW)
+    btframe = Frame(lb)
+    btframe.grid(row=5, column=0, sticky=NSEW)
+    btdefine = Button(btframe, text="自定义波段显示", command=definband)
+    btdefine.pack(side = LEFT)
+    btlayerok = Button(btframe, text="显示影像", command=affirmlayer)
+    btlayerok.pack(side = RIGHT)
     ##########
 
     Labelframe = Frame(root, width=widd, height=20, bg='gray')
